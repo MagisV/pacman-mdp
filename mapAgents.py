@@ -34,6 +34,9 @@ import game
 import util
 import sys
 
+FOOD_VALUE = 10
+EMTPY_VALUE = -1
+
 #
 # A class that creates a grid that can be used as a map
 #
@@ -105,6 +108,12 @@ class Grid:
     def getWidth(self):
         return self.width
 
+# north is the direction of increasing y, or (0,1)
+directionCoordinate = {Directions.NORTH: (0, 1), Directions.SOUTH: (0, -1), Directions.WEST: (-1, 0), Directions.EAST: (1, 0)}
+movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Directions.EAST], 
+                       Directions.SOUTH: [Directions.SOUTH, Directions.WEST, Directions.EAST], 
+                       Directions.WEST: [Directions.WEST, Directions.NORTH, Directions.SOUTH], 
+                       Directions.EAST: [Directions.EAST, Directions.NORTH, Directions.SOUTH]}
 #
 # An agent that creates a map.
 #
@@ -128,7 +137,7 @@ class MapAgent(Agent):
          self.makeMap(state)
          self.addWallsToMap(state)
          self.updateFoodInMap(state)
-         self.map.display()
+        #  self.map.display()
 
     # This is what gets run when the game ends.
     def final(self, state):
@@ -137,7 +146,6 @@ class MapAgent(Agent):
     # Make a map by creating a grid of the right size
     def makeMap(self,state):
         corners = api.corners(state)
-        print corners
         height = self.getLayoutHeight(corners)
         width  = self.getLayoutWidth(corners)
         self.map = Grid(width, height)
@@ -167,30 +175,62 @@ class MapAgent(Agent):
     def addWallsToMap(self, state):
         walls = api.walls(state)
         for i in range(len(walls)):
-            self.map.setValue(walls[i][0], walls[i][1], '%')
+            self.map.setValue(walls[i][0], walls[i][1], None)
 
     # Create a map with a current picture of the food that exists.
     def updateFoodInMap(self, state):
         # First, make all grid elements that aren't walls blank.
         for i in range(self.map.getWidth()):
             for j in range(self.map.getHeight()):
-                if self.map.getValue(i, j) != '%':
-                    self.map.setValue(i, j, ' ')
+                if self.map.getValue(i, j) != None:
+                    self.map.setValue(i, j, EMTPY_VALUE)
         food = api.food(state)
         for i in range(len(food)):
-            self.map.setValue(food[i][0], food[i][1], '*')
+            self.map.setValue(food[i][0], food[i][1], FOOD_VALUE)
  
     # For now I just move randomly, but I display the map to show my progress
     def getAction(self, state):
-        self.updateFoodInMap(state)
-        self.map.prettyDisplay()
-        
-        # Get the actions we can try, and remove "STOP" if that is one of them.
+        self.updateFoodInMap(state)        
         legal = api.legalActions(state)
+
+        # removing stop for now, might be worth adding back later on.
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
-        # Random choice between the legal options.
-        return api.makeMove(random.choice(legal), legal)
+
+        position = api.whereAmI(state)
+
+        rewards = []
+        for action in legal:
+            currRewards = []
+            for direction in movePossibleResults[action]:
+                new_x, new_y = self.getCoordinateAfterMove(direction, position)
+                rewardValue = self.map.getValue(new_x, new_y)
+                currRewards.append(rewardValue)
+            rewards.append((action, self.getExpectedValue(currRewards)))
+        print(rewards)
+        # max expected utility from legal actions
+        maxRewardMove = max(rewards, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
+        return api.makeMove(maxRewardMove, legal)
     
+    def getExpectedValue(self, rewards):
+
+        # bumping into wall gives reward of 0. Check what happens when bumping into wall and possibly change accordingly.
+        def valOrZero(val):
+            return 0 if val == None else val
+        
+        expected = 0
+        expected += 0.8 * valOrZero(rewards[0])
+        expected += 0.1 * valOrZero(rewards[1])
+        expected += 0.1 * valOrZero(rewards[2])
+
+        
+        
+        return expected
+
+
+    def getCoordinateAfterMove(self, direction, position):
+        move = directionCoordinate[direction]
+        x, y = move[0] + position[0], move[1] + position[1]
+        return x, y
 
    
