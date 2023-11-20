@@ -39,8 +39,8 @@ FOOD_VALUE = 10
 EMTPY_VALUE = -1
 
 # Value iteration:
-ITERATIONS = 10
-CONVERGENCE_THRESHOLD = 0.001
+ITERATIONS = 50
+CONVERGENCE_THRESHOLD = 0.01
 
 # Bellmann:
 GAMMA = 0.9
@@ -138,7 +138,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
 # makes the display look nice. Other values will probably work better
 # for decision making.
 #
-class MapAgent(Agent):
+class SimpleMDPAgent(Agent):
 
     # The constructor. We don't use this to create the map because it
     # doesn't have access to state information.
@@ -213,15 +213,17 @@ class MapAgent(Agent):
             legal.remove(Directions.STOP)
 
         self.updateFoodInMap(state)
-        utilityMap = self.valueIteration(legal)  
+        utilityMap = self.valueIteration()  
 
         position = api.whereAmI(state)
         x,y = position[0], position[1]
         
-        maxRewardMove = self.getMaxUtilityMove(legal, utilityMap, x, y)
+        maxUtilityMove = self.getMaxUtilityMove(legal, utilityMap, x, y)
 
-        return api.makeMove(maxRewardMove, legal)
+        return api.makeMove(maxUtilityMove, legal)
     
+
+
     def getMaxUtilityMove(self, legal, utilityMap, x, y):
         allUtilities = []
          # find the best move to make from these utilities   
@@ -243,19 +245,6 @@ class MapAgent(Agent):
         # max expected utility from actions
         return max(allUtilities, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
         # there is a chance that passing actions as legal doesnt work. -> Not sure if "bumping back" is implemented. If not, then just just use legal instead of actions.
-        
-
-    def getExpectedValue(self, rewards):
-        # bumping into wall gives reward of 0. Check what happens when bumping into wall and possibly change accordingly.
-        def valOrZero(val):
-            return 0 if val == None else val
-        
-        expected = 0
-        expected += 0.8 * valOrZero(rewards[0])
-        expected += 0.1 * valOrZero(rewards[1])
-        expected += 0.1 * valOrZero(rewards[2])
-        
-        return expected
 
 
     def getCoordinateAfterMove(self, direction, x, y):
@@ -264,7 +253,7 @@ class MapAgent(Agent):
         return x, y
     
 
-    def valueIteration(self, legal):
+    def valueIteration(self):
 
         def copyMap(map, width, height):
             copy = Grid(map.getWidth(), map.getHeight())
@@ -272,6 +261,16 @@ class MapAgent(Agent):
                 for j in range(height):
                     copy.setValue(i, j, map.getValue(i, j))
             return copy
+        
+        # none of the values changed more than the threshold
+        def converged(new, previous, width, height):
+            for i in range(width):
+                for j in range(height):
+                    if new.getValue(i, j) != None:
+                        if abs(new.getValue(i, j) - previous.getValue(i, j)) > CONVERGENCE_THRESHOLD:
+                            return False
+            return True
+                        
         
         # initialise utility map
         width = self.map.getWidth()
@@ -283,8 +282,6 @@ class MapAgent(Agent):
                 initialValue = 0 if self.map.getValue(i, j) != None else None
                 utilityMap.setValue(i, j, initialValue)
         
-        # converged = False # not using for now
-        
         for k in range (0, ITERATIONS):
             utilityMapCopy = copyMap(utilityMap, width, height) # use to keep track of new values
             for i in range(1, width - 1):
@@ -292,7 +289,9 @@ class MapAgent(Agent):
                     if self.map.getValue(i, j) != None: # only compute utility for non-wall spots
                         utility = self.bellmann(utilityMapCopy, i, j)
                         utilityMap.setValue(i, j, utility)
-        
+            if converged(utilityMap, utilityMapCopy, width, height): # the result is probably precise enough to stop iterating
+                print("converged after ", k, "iterations")
+                break
         return utilityMap
     
 
@@ -308,23 +307,21 @@ class MapAgent(Agent):
             return possible
 
         maxUtility = float('-inf')
-        utilityMap.prettyDisplay()
 
         for action in getLegalActionsForXY(x, y):
             possibleMoveOutcomes = movePossibleResults[action] # ordering important. Intended action first.
             newUtilities = []
-            print("considering action ", action)
-            print("possibleMoveOutcomes", possibleMoveOutcomes)
+            # print("considering action ", action)
+            # print("possibleMoveOutcomes", possibleMoveOutcomes)
             for movedTo in possibleMoveOutcomes:
                 new_x, new_y = self.getCoordinateAfterMove(movedTo, x, y)
-                print(new_x, new_y)
                 if self.map.getValue(new_x, new_y) == None: # would end up in wall > bump back
                     newUtility = utilityMap.getValue(x, y)  # Pacman stays in place
                 else:
                     newUtility = utilityMap.getValue(new_x, new_y) # Utility of moving to the place action leads to
                 newUtilities.append(newUtility)
 
-            print("action ", action, "utilities", newUtilities)
+            # print("action ", action, "utilities", newUtilities)
             sumUtility = self.getExpectedUtility(newUtilities)
             # update the maximum utility
             if sumUtility > maxUtility:
@@ -347,3 +344,4 @@ class MapAgent(Agent):
 
     
    
+# Things to build: check convergence according to certain threshold and stop value iteration before hard limit if converged sufficiently.
