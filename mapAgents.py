@@ -1,3 +1,4 @@
+# coding: utf-8
 # mapAgents.py
 # parsons/11-nov-2017
 #
@@ -203,33 +204,41 @@ class MapAgent(Agent):
         for i in range(len(food)):
             self.map.setValue(food[i][0], food[i][1], FOOD_VALUE)
  
-    # For now I just move randomly, but I display the map to show my progress
-    def getAction(self, state):
-        self.updateFoodInMap(state)        
-        legal = api.legalActions(state)
 
-        # removing stop for now, might be worth adding back later on.
+
+    def getAction(self, state):
+        self.updateFoodInMap(state)
+        position = api.whereAmI(state)
+        x,y = position[0], position[1]
+        print(position)
+        legal = api.legalActions(state)
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
 
-        position = api.whereAmI(state)
+        utilityMap = self.valueIteration(legal)  
 
-        rewards = []
+        
+        allUtilities = []
+        
+        # find the best move to make from these utilities   
         for action in legal:
-            currRewards = []
-            for direction in movePossibleResults[action]:
-                new_x, new_y = self.getCoordinateAfterMove(direction, position[0], position[1])
-                rewardValue = self.map.getValue(new_x, new_y)
-                currRewards.append(rewardValue)
-            rewards.append((action, self.getExpectedValue(currRewards)))
-        
-        print(rewards)
-        utilities = self.valueIteration()
-        # find the best move to make from these utilities (same as before)
+            possibleMoveOutcomes = movePossibleResults[action] # ordering important. Intended action first.
+            newUtilities = []
+            for movedTo in possibleMoveOutcomes:
+                new_x, new_y = self.getCoordinateAfterMove(movedTo, x, y)
+                if self.map.getValue(new_x, new_y) == None: # would end up in wall bump back
+                    newUtility = utilityMap.getValue(x, y)  # Pacman stays in place
+                else:
+                    newUtility = utilityMap.getValue(new_x, new_y) # Utility of moving to the place action leads to
+                newUtilities.append(newUtility)
+            
+            sumUtility = self.getExpectedUtility(newUtilities)
 
-        # max expected utility from legal actions
-        maxRewardMove = max(rewards, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
-        
+            allUtilities.append((action, sumUtility))
+
+        # max expected utility from actions
+        maxRewardMove = max(allUtilities, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
+        # there is a chance that passing actions as legal doesnt work. -> Not sure if "bumping back" is implemented. If not, then just just use legal instead of actions.
         return api.makeMove(maxRewardMove, legal)
     
 
@@ -252,7 +261,7 @@ class MapAgent(Agent):
         return x, y
     
 
-    def valueIteration(self):
+    def valueIteration(self, legal):
 
         def copyMap(map, width, height):
             copy = Grid(map.getWidth(), map.getHeight())
@@ -274,36 +283,50 @@ class MapAgent(Agent):
         # converged = False # not using for now
         
         for k in range (0, ITERATIONS):
-            utilityMapCopy = copyMap(utilityMap, width, height) # use this to keep track of previous values. Changing utility map with updated values.
-            for i in range(width):
-                for j in range(height):
-                    utility = self.bellmann(utilityMapCopy, i, j)
-                    utilityMap.setValue(i, j, utility)
+            utilityMapCopy = copyMap(utilityMap, width, height) # use to keep track of new values
+            for i in range(1, width - 1):
+                for j in range(1, height - 1):
+                    if self.map.getValue(i, j) != None: # only compute utility for non-wall spots
+                        utility = self.bellmann(utilityMapCopy, i, j)
+                        utilityMap.setValue(i, j, utility)
         
         return utilityMap
     
 
     def bellmann(self, utilityMap, x, y):
-        actions = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
-        maxUtility = float('-inf')
 
-        for action in actions:
+        def getLegalActionsForXY(x, y):
+            possible = []
+            actions = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
+            for action in actions:
+                new_x, new_y = self.getCoordinateAfterMove(action, x, y)
+                if self.map.getValue(new_x, new_y) != None:
+                    possible.append(action)
+            return possible
+
+        maxUtility = float('-inf')
+        utilityMap.prettyDisplay()
+
+        for action in getLegalActionsForXY(x, y):
             possibleMoveOutcomes = movePossibleResults[action] # ordering important. Intended action first.
             newUtilities = []
+            print("considering action ", action)
+            print("possibleMoveOutcomes", possibleMoveOutcomes)
             for movedTo in possibleMoveOutcomes:
                 new_x, new_y = self.getCoordinateAfterMove(movedTo, x, y)
-                if self.map.getValue(new_x, new_y) == None: # would end up in wall --> bump back
+                print(new_x, new_y)
+                if self.map.getValue(new_x, new_y) == None: # would end up in wall > bump back
                     newUtility = utilityMap.getValue(x, y)  # Pacman stays in place
                 else:
                     newUtility = utilityMap.getValue(new_x, new_y) # Utility of moving to the place action leads to
                 newUtilities.append(newUtility)
-            
-            sumUtility = self.getExpectedUtility(newUtilities)
 
+            print("action ", action, "utilities", newUtilities)
+            sumUtility = self.getExpectedUtility(newUtilities)
             # update the maximum utility
             if sumUtility > maxUtility:
                 maxUtility = sumUtility
-        
+
         reward = self.map.getValue(x, y)
         # utiliy = reward of being state s + discount * (utility of action with the max utility outcome) 
         utility = reward + GAMMA * maxUtility
@@ -319,6 +342,5 @@ class MapAgent(Agent):
         
         return expected
 
-
-        
+    
    

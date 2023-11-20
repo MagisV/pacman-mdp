@@ -116,11 +116,11 @@ class SensingAgent(Agent):
         print "Wall locations: "
         print api.walls(state)
 
-        print "Cornser locations: "
+        print "Corner locations: "
         print api.corners(state)        
         # getAction has to return a move. Here we pass "STOP" to the
         # API to ask Pacman to stay where they are.
-        return api.makeMove(Directions.STOP, legal)
+        return api.makeMove(Directions.NORTH, legal)
 
 FOOD_REWARD = 100
 EMTPY_REWARD = -0.4
