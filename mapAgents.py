@@ -37,12 +37,14 @@ import sys
 
 FOOD_VALUE = 10
 EMTPY_VALUE = -1
+GHOST_VALUE = -100
 
 # Value iteration:
-ITERATIONS = 50
+ITERATIONS = 200
 CONVERGENCE_THRESHOLD = 0.01
 
 # Bellmann:
+# How much the agent values future rewards over immediate rewards
 GAMMA = 0.9
 
 #
@@ -152,7 +154,7 @@ class SimpleMDPAgent(Agent):
          # Make a map of the right size
          self.makeMap(state)
          self.addWallsToMap(state)
-         self.updateFoodInMap(state)
+         self.initialiseRewardsInMap(state)
         #  self.map.display()
 
     # This is what gets run when the game ends.
@@ -194,17 +196,50 @@ class SimpleMDPAgent(Agent):
             self.map.setValue(walls[i][0], walls[i][1], None)
 
     # Create a map with a current picture of the food that exists.
-    def updateFoodInMap(self, state):
+    def initialiseRewardsInMap(self, state):
         # First, make all grid elements that aren't walls blank.
         for i in range(self.map.getWidth()):
             for j in range(self.map.getHeight()):
                 if self.map.getValue(i, j) != None:
                     self.map.setValue(i, j, EMTPY_VALUE)
-        food = api.food(state)
-        for i in range(len(food)):
-            self.map.setValue(food[i][0], food[i][1], FOOD_VALUE)
- 
 
+        # Food
+        food = api.food(state)
+        for x, y in food:
+            self.map.setValue(x, y, FOOD_VALUE)
+        
+        # Ghosts
+        ghosts = api.ghosts(state)
+        for x, y in ghosts:
+            self.map.setValue(x, y, GHOST_VALUE)
+
+        self.previousGhosts = ghosts # double check if this copies the list or only passes a reference 
+
+        # Capsules
+
+    def apiGetGhostsInt(self, state):
+        return [(int(ghost[0]),int(ghost[1])) for ghost in api.ghosts(state)]
+
+
+    def updateMap(self, state, x, y):
+        # if there was food in the place pacman moved to, it was eaten. --> Field is now empty
+        if self.map.getValue(x, y) == FOOD_VALUE:
+            self.map.setValue(x, y, EMTPY_VALUE)
+
+        ghosts = self.apiGetGhostsInt(state)
+
+        for x, y in ghosts:
+            self.map.setValue(x, y, GHOST_VALUE)
+
+        # Check out all the places ghosts came from. If there was food in the location, reinstatiate it. Otherwise, set it to empty.
+        food = api.food(state)
+        for prevGhostLocation in self.previousGhosts:
+            if prevGhostLocation in food:
+                self.map.setValue(prevGhostLocation[0], prevGhostLocation[1], FOOD_VALUE)
+            else:
+                self.map.setValue(prevGhostLocation[0], prevGhostLocation[1], EMTPY_VALUE)
+
+        self.previousGhosts = ghosts
 
     def getAction(self, state):
         
@@ -212,12 +247,13 @@ class SimpleMDPAgent(Agent):
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
 
-        self.updateFoodInMap(state)
-        utilityMap = self.valueIteration()  
-
         position = api.whereAmI(state)
         x,y = position[0], position[1]
-        
+
+        self.updateMap(state, x, y)
+        utilityMap = self.valueIteration()  
+
+        # utilityMap.prettyDisplay()
         maxUtilityMove = self.getMaxUtilityMove(legal, utilityMap, x, y)
 
         return api.makeMove(maxUtilityMove, legal)
@@ -290,7 +326,7 @@ class SimpleMDPAgent(Agent):
                         utility = self.bellmann(utilityMapCopy, i, j)
                         utilityMap.setValue(i, j, utility)
             if converged(utilityMap, utilityMapCopy, width, height): # the result is probably precise enough to stop iterating
-                print("converged after ", k, "iterations")
+                # print("converged after ", k, "iterations")
                 break
         return utilityMap
     
