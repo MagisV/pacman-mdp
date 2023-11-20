@@ -207,20 +207,24 @@ class MapAgent(Agent):
 
 
     def getAction(self, state):
-        self.updateFoodInMap(state)
-        position = api.whereAmI(state)
-        x,y = position[0], position[1]
-        print(position)
+        
         legal = api.legalActions(state)
         if Directions.STOP in legal:
             legal.remove(Directions.STOP)
 
+        self.updateFoodInMap(state)
         utilityMap = self.valueIteration(legal)  
 
+        position = api.whereAmI(state)
+        x,y = position[0], position[1]
         
+        maxRewardMove = self.getMaxUtilityMove(legal, utilityMap, x, y)
+
+        return api.makeMove(maxRewardMove, legal)
+    
+    def getMaxUtilityMove(self, legal, utilityMap, x, y):
         allUtilities = []
-        
-        # find the best move to make from these utilities   
+         # find the best move to make from these utilities   
         for action in legal:
             possibleMoveOutcomes = movePossibleResults[action] # ordering important. Intended action first.
             newUtilities = []
@@ -237,10 +241,9 @@ class MapAgent(Agent):
             allUtilities.append((action, sumUtility))
 
         # max expected utility from actions
-        maxRewardMove = max(allUtilities, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
+        return max(allUtilities, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
         # there is a chance that passing actions as legal doesnt work. -> Not sure if "bumping back" is implemented. If not, then just just use legal instead of actions.
-        return api.makeMove(maxRewardMove, legal)
-    
+        
 
     def getExpectedValue(self, rewards):
         # bumping into wall gives reward of 0. Check what happens when bumping into wall and possibly change accordingly.
