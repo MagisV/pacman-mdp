@@ -37,6 +37,13 @@ import sys
 FOOD_VALUE = 10
 EMTPY_VALUE = -1
 
+# Value iteration:
+ITERATIONS = 10
+CONVERGENCE_THRESHOLD = 0.001
+
+# Bellmann:
+GAMMA = 0.9
+
 #
 # A class that creates a grid that can be used as a map
 #
@@ -68,6 +75,14 @@ class Grid:
 
         self.grid = subgrid
 
+    # Returns deepcopy of this grid
+    # def copy(self):
+    #     copy = Grid(self.width, self.height)
+    #     for row in range(self.height):
+    #         for col in range(self.width):
+    #             copy.setValue(row, col, self.getValue(row, col)) # only creates copies if this doesnt return a reference.
+    #     return copy
+    
     # Print the grid out.
     def display(self):       
         for i in range(self.height):
@@ -203,17 +218,22 @@ class MapAgent(Agent):
         for action in legal:
             currRewards = []
             for direction in movePossibleResults[action]:
-                new_x, new_y = self.getCoordinateAfterMove(direction, position)
+                new_x, new_y = self.getCoordinateAfterMove(direction, position[0], position[1])
                 rewardValue = self.map.getValue(new_x, new_y)
                 currRewards.append(rewardValue)
             rewards.append((action, self.getExpectedValue(currRewards)))
+        
         print(rewards)
+        utilities = self.valueIteration()
+        # find the best move to make from these utilities (same as before)
+
         # max expected utility from legal actions
         maxRewardMove = max(rewards, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
+        
         return api.makeMove(maxRewardMove, legal)
     
-    def getExpectedValue(self, rewards):
 
+    def getExpectedValue(self, rewards):
         # bumping into wall gives reward of 0. Check what happens when bumping into wall and possibly change accordingly.
         def valOrZero(val):
             return 0 if val == None else val
@@ -222,15 +242,83 @@ class MapAgent(Agent):
         expected += 0.8 * valOrZero(rewards[0])
         expected += 0.1 * valOrZero(rewards[1])
         expected += 0.1 * valOrZero(rewards[2])
-
-        
         
         return expected
 
 
-    def getCoordinateAfterMove(self, direction, position):
+    def getCoordinateAfterMove(self, direction, x, y):
         move = directionCoordinate[direction]
-        x, y = move[0] + position[0], move[1] + position[1]
+        x, y = move[0] + x, move[1] + y
         return x, y
+    
 
+    def valueIteration(self):
+
+        def copyMap(map, width, height):
+            copy = Grid(map.getWidth(), map.getHeight())
+            for i in range(width):
+                for j in range(height):
+                    copy.setValue(i, j, map.getValue(i, j))
+            return copy
+        
+        # initialise utility map
+        width = self.map.getWidth()
+        height = self.map.getHeight()
+        utilityMap = Grid(width, height)
+        # Utility of all spots set to 0, except for walls (None)
+        for i in range(width):
+            for j in range(height):
+                initialValue = 0 if self.map.getValue(i, j) != None else None
+                utilityMap.setValue(i, j, initialValue)
+        
+        # converged = False # not using for now
+        
+        for k in range (0, ITERATIONS):
+            utilityMapCopy = copyMap(utilityMap, width, height) # use this to keep track of previous values. Changing utility map with updated values.
+            for i in range(width):
+                for j in range(height):
+                    utility = self.bellmann(utilityMapCopy, i, j)
+                    utilityMap.setValue(i, j, utility)
+        
+        return utilityMap
+    
+
+    def bellmann(self, utilityMap, x, y):
+        actions = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
+        maxUtility = float('-inf')
+
+        for action in actions:
+            possibleMoveOutcomes = movePossibleResults[action] # ordering important. Intended action first.
+            newUtilities = []
+            for movedTo in possibleMoveOutcomes:
+                new_x, new_y = self.getCoordinateAfterMove(movedTo, x, y)
+                if self.map.getValue(new_x, new_y) == None: # would end up in wall --> bump back
+                    newUtility = utilityMap.getValue(x, y)  # Pacman stays in place
+                else:
+                    newUtility = utilityMap.getValue(new_x, new_y) # Utility of moving to the place action leads to
+                newUtilities.append(newUtility)
+            
+            sumUtility = self.getExpectedUtility(newUtilities)
+
+            # update the maximum utility
+            if sumUtility > maxUtility:
+                maxUtility = sumUtility
+        
+        reward = self.map.getValue(x, y)
+        # utiliy = reward of being state s + discount * (utility of action with the max utility outcome) 
+        utility = reward + GAMMA * maxUtility
+
+        return utility
+
+    # Hardcoded probabilities. Depends on the correct ordering of the rewards array. 
+    def getExpectedUtility(self, rewards):
+        expected = 0
+        expected += 0.8 * rewards[0]
+        expected += 0.1 * rewards[1]
+        expected += 0.1 * rewards[2]
+        
+        return expected
+
+
+        
    
