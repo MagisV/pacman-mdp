@@ -1,7 +1,12 @@
 # coding: utf-8
 # mapAgents.py
 # parsons/11-nov-2017
-#
+
+# # Average Score: 1117.64
+# Scores:        631.0, 1851.0, 756.0, 879.0, 672.0, 1865.0, 1985.0, 1847.0, 1899.0, 831.0, 1684.0, 86.0, 599.0, 1836.0, 567.0, 405.0, 565.0, 1831.0, 2051.0, 764.0, 259.0, 814.0, 1816.0, 1007.0, 441.0
+# Win Rate:      10/25 (0.40)
+# Record:        Loss, Win, Loss, Loss, Loss, Win, Win, Win, Win, Loss, Win, Loss, Loss, Win, Loss, Loss, Loss, Win, Win, Loss, Loss, Loss, Win, Loss, Loss
+
 # Version 1.0
 #
 # A simple map-building to work with the PacMan AI projects from:
@@ -27,11 +32,6 @@
 # The agent here is an extension of the above code written by Simon
 # Parsons, based on the code in pacmanAgents.py
 
-# Todo: Make map update more efficient
-# Todo: small map
-# Tune rewards
-
-
 from pacman import Directions
 from game import Agent
 import api
@@ -43,11 +43,11 @@ from collections import deque
 
 FOOD_REWARD = 10
 EMTPY_REWARD = -0.04
-GHOST_REWARD = -1000
-GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
+GHOST_REWARD = -500
+GHOST_DANGER_ZONE = 2 # fields around ghost that are given a negative reward as well
 GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
-CAPSULE_REWARD = 100
-GHOST_EDIBLE_REWARD = abs(GHOST_REWARD)
+CAPSULE_REWARD = 50
+GHOST_EDIBLE_REWARD = 200
 CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 6
 
 # Value iteration:
@@ -144,7 +144,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
 # makes the display look nice. Other values will probably work better
 # for decision making.
 #
-class SimpleMDPAgent(Agent):
+class SimpleMDPAgent1(Agent):
 
     # The constructor. We don't use this to create the map because it
     # doesn't have access to state information.
@@ -154,26 +154,17 @@ class SimpleMDPAgent(Agent):
     # This function is run when the agent is created, and it has access
     # to state information, so we use it to build a map for the agent.
     def registerInitialState(self, state):
-        print "Running registerInitialState!"
-        # Make a map of the right size
-        self.makeMap(state)
-        self.addWallsToMap(state)
-        self.initialiseRewardsInMap(state)
-        self.previousGhosts = []
-        self.isSmall = self.map.getWidth() < 8
-        if self.isSmall:
-            global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS
-            FOOD_REWARD = 15
-            EMTPY_REWARD = -0.04
-            GHOST_REWARD = -200
-            GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
-            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
-            GAMMA = 0.9
-            ITERATIONS = 100
+         print "Running registerInitialState!"
+         # Make a map of the right size
+         self.makeMap(state)
+         self.addWallsToMap(state)
+         self.initialiseRewardsInMap(state)
+         self.previousGhosts = []
+        #  self.map.display()
 
     # This is what gets run when the game ends.
     def final(self, state):
-        # cleanup?
+
         print "Looks like I just died!"
 
     # Make a map by creating a grid of the right size
@@ -212,8 +203,7 @@ class SimpleMDPAgent(Agent):
 
     # Create a map with a current picture of the food that exists.
     def initialiseRewardsInMap(self, state):
-
-        # make all grid elements that aren't walls blank (= empty reward)
+        # First, make all grid elements that aren't walls blank.
         for i in range(self.map.getWidth()):
             for j in range(self.map.getHeight()):
                 if self.map.getValue(i, j) != None:
@@ -274,19 +264,20 @@ class SimpleMDPAgent(Agent):
 
         # Ghosts
         ghosts = self.apiGetGhostsWithTimesInt(state)
-        for xG, yG, t in ghosts:
+        for x, y, t in ghosts:
             if t > CAPSULE_TIME_RUNNING_OUT_THRESHOLD: # timer is bigger than threshold --> consider ghost as edible. chase after. otherwise run away
-                self.updateRewardsCapsuleEaten(state, xG, yG, t)
+                self.updateRewardsCapsuleEaten(state, x, y, t)
             else: # ghost is not edible --> negative reward. Run away
-                dangerZone = self.getNAdjacentPoints(GHOST_DANGER_ZONE, (xG, yG))
-                for xD, yD in dangerZone:
-                    self.map.setValue(xD, yD, GHOST_DANGER_ZONE_REWARD)
-                self.map.setValue(xG, yG, GHOST_REWARD)
+                dangerZone = self.getNAdjacentPoints(2, (x, y))
+                for x, y in dangerZone:
+                    self.map.setValue(x, y, GHOST_DANGER_ZONE_REWARD)
+                self.map.setValue(x, y, GHOST_REWARD)
         self.previousGhosts = ghosts
 
         # TODO: Make the map update more efficient.
 
     def getNAdjacentPoints(self, n, startPoint):
+    # These arrays are used to get row and column numbers of 4 neighbours of a given cell
         rowNum = [-1, 0, 0, 1]
         colNum = [0, -1, 1, 0]
         
@@ -314,7 +305,6 @@ class SimpleMDPAgent(Agent):
                         if adjPoint not in visited:
                             visited.add(adjPoint)
                             queue.append((adjPoint, dist + 1))
-        print("danger points are", dangerPoints)
         
         return list(dangerPoints)
 
@@ -431,6 +421,7 @@ class SimpleMDPAgent(Agent):
                             return False
             return True
                         
+        
         # initialise utility map
         width = self.map.getWidth()
         height = self.map.getHeight()

@@ -29,7 +29,10 @@
 
 # Todo: Make map update more efficient
 # Todo: small map
-# Tune rewards
+
+# ideas:
+# higher reward for food that is closer --> Aiming for higher score
+# reduce reward for spots with less exits
 
 
 from pacman import Directions
@@ -48,8 +51,8 @@ GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as
 GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
 CAPSULE_REWARD = 100
 GHOST_EDIBLE_REWARD = abs(GHOST_REWARD)
-CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 6
-
+CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 5
+ISSMALL = False
 # Value iteration:
 ITERATIONS = 100
 CONVERGENCE_THRESHOLD = 0.001
@@ -137,14 +140,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
                        Directions.WEST: [Directions.WEST, Directions.NORTH, Directions.SOUTH], 
                        Directions.EAST: [Directions.EAST, Directions.NORTH, Directions.SOUTH]}
 #
-# An agent that creates a map.
-#
-# As currently implemented, the map places a % for each section of
-# wall, a * where there is food, and a space character otherwise. That
-# makes the display look nice. Other values will probably work better
-# for decision making.
-#
-class SimpleMDPAgent(Agent):
+class NewMDPAgent(Agent):
 
     # The constructor. We don't use this to create the map because it
     # doesn't have access to state information.
@@ -160,17 +156,16 @@ class SimpleMDPAgent(Agent):
         self.addWallsToMap(state)
         self.initialiseRewardsInMap(state)
         self.previousGhosts = []
-        self.isSmall = self.map.getWidth() < 8
-        if self.isSmall:
-            global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS
-            FOOD_REWARD = 15
-            EMTPY_REWARD = -0.04
-            GHOST_REWARD = -200
+        if self.map.getWidth() < 8:
+            global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
+            FOOD_REWARD = 20
+            EMTPY_REWARD = -0.01
+            GHOST_REWARD = -100
             GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
-            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
-            GAMMA = 0.9
+            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
+            GAMMA = 0.95
             ITERATIONS = 100
-
+            ISSMALL = True
     # This is what gets run when the game ends.
     def final(self, state):
         # cleanup?
@@ -234,6 +229,8 @@ class SimpleMDPAgent(Agent):
         for x, y in ghosts:
             self.map.setValue(x, y, GHOST_REWARD)
 
+        if ISSMALL:
+            self.map.setValue(3, 3, FOOD_REWARD * 0.5)
         self.previousGhosts = ghosts 
 
     def apiGetGhostsInt(self, state):
@@ -266,11 +263,14 @@ class SimpleMDPAgent(Agent):
         food = api.food(state)
         for x, y in food:
             self.map.setValue(x, y, FOOD_REWARD)
-        
+        if ISSMALL and (3, 3) in food:
+            self.map.setValue(3, 3, FOOD_REWARD * 0.5)
+
         # Capsules
         capsules = api.capsules(state)
         for x, y in capsules:
             self.map.setValue(x, y, CAPSULE_REWARD)
+
 
         # Ghosts
         ghosts = self.apiGetGhostsWithTimesInt(state)
@@ -314,10 +314,8 @@ class SimpleMDPAgent(Agent):
                         if adjPoint not in visited:
                             visited.add(adjPoint)
                             queue.append((adjPoint, dist + 1))
-        print("danger points are", dangerPoints)
         
         return list(dangerPoints)
-
 
     def updateRewardsCapsuleEaten(self, state, x, y, edibleTime):
         position = api.whereAmI(state)
@@ -327,6 +325,12 @@ class SimpleMDPAgent(Agent):
             self.map.setValue(x, y, GHOST_EDIBLE_REWARD)
         else:
             self.map.setValue(x, y, GHOST_EDIBLE_REWARD) # could make this reward a function of time and distance
+
+        # negative rewards around spawn point, if a ghost is there
+        respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
+        if (x, y) in respawn:
+            for xR, yR in respawn:
+                self.map.setValue(xR, yR, GHOST_DANGER_ZONE_REWARD)
 
     # use BFS to find distance to a point.
     def distance(self, start, end):
@@ -431,6 +435,7 @@ class SimpleMDPAgent(Agent):
                             return False
             return True
                         
+        
         # initialise utility map
         width = self.map.getWidth()
         height = self.map.getHeight()

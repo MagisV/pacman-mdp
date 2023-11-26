@@ -120,35 +120,36 @@ class SensingAgent(Agent):
         print api.corners(state)        
         # getAction has to return a move. Here we pass "STOP" to the
         # API to ask Pacman to stay where they are.
-        return api.makeMove(Directions.NORTH, legal)
+
+        return api.makeMove(random.choice(legal), legal)
 
 FOOD_REWARD = 100
 EMTPY_REWARD = -0.4
 
-# class MyGreedyAgent(Agent):
+class MyGreedyAgent(Agent):
 
-#     # create a map of the maze.
-#     def __init__(self):
-#         self.map = None
+    # create a map of the maze.
+    def __init__(self):
+        self.map = None
 
-#     def getAction(self, state):
-#         if self.map is None:
-#             self.createMap(api.walls(state), api.corners(state), api.food(state))
+    def getAction(self, state):
+        if self.map is None:
+            self.createMap(api.walls(state), api.corners(state), api.food(state))
 
-#         legal = api.legalActions(state)
+        legal = api.legalActions(state)
+        
 
+        return api.makeMove(direction, legal)
 
-#         return api.makeMove(direction, legal)
-
-#     def createMap(self, walls, corners, food):
-#         # create a map of the maze
-#         width = corners[3][0]
-#         height = corners[3][1]
-#         for row in range(0, height):
-#             for col in range (0, width):
-#                 if (row, col) in walls:
-#                     map[row][col] = None
-#                 elif (row, col) in food:
-#                     map[row][col] = FOOD_REWARD
-#                 else:
-#                     map[row][col] = EMTPY_REWARD
+    def createMap(self, walls, corners, food):
+        # create a map of the maze
+        width = corners[3][0]
+        height = corners[3][1]
+        for row in range(0, height):
+            for col in range (0, width):
+                if (row, col) in walls:
+                    map[row][col] = None
+                elif (row, col) in food:
+                    map[row][col] = FOOD_REWARD
+                else:
+                    map[row][col] = EMTPY_REWARD
