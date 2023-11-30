@@ -33,6 +33,7 @@
 # ideas:
 # higher reward for food that is closer --> Aiming for higher score
 # reduce reward for spots with less exits
+# predict path of ghosts for n steps and give negative rewards to where they might go. Observation: usually go straight and then randomly select direction when at intersection.
 
 
 from pacman import Directions
@@ -45,10 +46,10 @@ import sys
 from collections import deque
 
 FOOD_REWARD = 20
-EMTPY_REWARD = -0.02
-GHOST_REWARD = -100
-GHOST_DANGER_ZONE = 1
-GHOST_DANGER_ZONE = 1
+EMTPY_REWARD = -0.05
+GHOST_REWARD = -1000
+GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
+GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
 CAPSULE_REWARD = 100
 GHOST_EDIBLE_REWARD = abs(GHOST_REWARD)
 CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 5
@@ -139,7 +140,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
                        Directions.SOUTH: [Directions.SOUTH, Directions.WEST, Directions.EAST], 
                        Directions.WEST: [Directions.WEST, Directions.NORTH, Directions.SOUTH], 
                        Directions.EAST: [Directions.EAST, Directions.NORTH, Directions.SOUTH]}
-#
+
 class NewMDPAgent(Agent):
 
     # The constructor. We don't use this to create the map because it
@@ -159,13 +160,13 @@ class NewMDPAgent(Agent):
         if self.map.getWidth() < 8:
             global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
 FOOD_REWARD = 20
-EMTPY_REWARD = -0.02
-GHOST_REWARD = -100
-GHOST_DANGER_ZONE = 1
-GHOST_DANGER_ZONE = 1
+EMTPY_REWARD = -0.05
+GHOST_REWARD = -1000
+            GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
+            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
 GAMMA = 0.95
 ITERATIONS = 100
-ISSMALL = False
+            ISSMALL = True
     # This is what gets run when the game ends.
     def final(self, state):
         # cleanup?
@@ -409,8 +410,7 @@ ISSMALL = False
             allUtilities.append((action, sumUtility))
 
         # max expected utility from actions
-        return max(allUtilities, key = lambda res: res[1])[0] # if the rewards are the same, this will always pick west > east -> can get stuck in corners. Will probably change with next implementation.
-
+        return max(allUtilities, key = lambda res: res[1])[0]
 
     def getCoordinateAfterMove(self, direction, x, y):
         move = directionCoordinate[direction]

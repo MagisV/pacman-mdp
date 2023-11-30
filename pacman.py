@@ -671,8 +671,16 @@ def runGames( layout, pacman, ghosts, display, numGames, record, numTraining = 0
         print 'Scores:       ', ', '.join([str(score) for score in scores])
         print 'Win Rate:      %d/%d (%.2f)' % (wins.count(True), len(wins), winRate)
         print 'Record:       ', ', '.join([ ['Loss', 'Win'][int(w)] for w in wins])
-
+        print 'Excellence Score: ', computeExcellenceScoreDifference(scores, wins)
     return games
+
+def computeExcellenceScoreDifference(scores, wins):
+    sum = 0.0
+    for win, score in zip(wins, scores):
+        if win:
+            sum += max(0, score - 1500.0)
+    return sum / (len(wins)/25.0)
+
 
 if __name__ == '__main__':
     """

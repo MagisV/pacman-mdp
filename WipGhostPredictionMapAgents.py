@@ -48,12 +48,12 @@ from collections import deque
 FOOD_REWARD = 20
 EMTPY_REWARD = -0.05
 GHOST_REWARD = -1250
-GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
-GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
+# GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
+# GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
 CAPSULE_REWARD = 100
-GHOST_EDIBLE_REWARD = abs(GHOST_REWARD)
-CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 5
-PREDICTION_THRESHOLD = 0.1
+GHOST_EDIBLE_REWARD = abs(GHOST_REWARD) * 0.75
+CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 4
+PREDICTION_THRESHOLD = 0.2
 ISSMALL = False
 ACTIONS = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
 
@@ -145,7 +145,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
                        Directions.EAST: [Directions.EAST, Directions.NORTH, Directions.SOUTH]}
 
 
-class GhostPredictionAgent(Agent):
+class WipGhostPredictionAgent(Agent):
 
     # The constructor. We don't use this to create the map because it
     # doesn't have access to state information.
@@ -164,14 +164,14 @@ class GhostPredictionAgent(Agent):
         self.previousGhosts = []
         if self.map.getWidth() < 8:
             global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
-            # FOOD_REWARD = 20
-            # EMTPY_REWARD = -0.01
-            # GHOST_REWARD = -100
-            # GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
-            # GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
-            # GAMMA = 0.95
-            # ITERATIONS = 100
-            # ISSMALL = True
+            FOOD_REWARD = 20
+            EMTPY_REWARD = -0.01
+            GHOST_REWARD = -100
+            GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
+            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
+            GAMMA = 0.92
+            ITERATIONS = 100
+            ISSMALL = True
 
     # This is what gets run when the game ends.
     def final(self, state):
@@ -272,8 +272,6 @@ class GhostPredictionAgent(Agent):
         food = api.food(state)
         for x, y in food:
             self.map.setValue(x, y, FOOD_REWARD)
-        # if ISSMALL and (3, 3) in food:
-        #     self.map.setValue(3, 3, FOOD_REWARD * 0.5)
 
         # Capsules
         capsules = api.capsules(state)
@@ -284,38 +282,45 @@ class GhostPredictionAgent(Agent):
         # Ghosts
         ghosts = self.apiGetGhostsWithTimesInt(state)
 
-        # predict where ghost is moving to. Give negative rewards to those fields.
+        # predict where ghosts are moving to.
+        predictedGhostPaths = []
         if len(self.previousGhosts) > 0: # no prediction can be made in first step of game since direction is unknown
             for (prevX, prevY, prevT), (currX, currY, currT) in zip(self.previousGhosts, ghosts):
                 direction = self.getMovementDirection(prevX, prevY, currX, currY)
+                wasEaten = abs(currX - prevX) > 1 or abs(currY - prevY) > 1
                 print("Ghost from ", (prevX, prevY), "to", (currX, currY), "moving", direction)
                 predictedGhostPath = self.predictGhostPath((currX, currY), direction)
                 self.prettyPrintGhostPaths(predictedGhostPath)
-                if currT > CAPSULE_TIME_RUNNING_OUT_THRESHOLD: # timer is bigger than threshold --> consider ghost as edible. chase after. otherwise run away
-                    reward = GHOST_EDIBLE_REWARD # integrate time and distance of pacman to that spot into the reward (how likely is it that pacman will get there in time)
-                    # negative rewards around spawn point, if a ghost is there
-                    self.setNegativeRewardsAtRespawn(currX, currY)
-                else:
-                    reward = GHOST_REWARD
-                
-                self.map.setValue(prevX, prevY, reward) # try to prevent pacman from running into ghost
+                predictedGhostPaths.append((predictedGhostPath, (currX, currY), (prevX, prevY), currT, wasEaten))
 
-                for (xpG, ypG), (probability, distance) in predictedGhostPath.items():
-                    discountedGhostReward = 1.0/(distance+1.0) * reward * probability
-                    currentReward = self.map.getValue(xpG, ypG)
-                    if currentReward == None:
-                        print("current reward is none")
-                        self.map.setValue(xpG, ypG, discountedGhostReward) # figure out how to fix this. Gets none when ghost respawns (but only sometimes)
-                    else:
-                        self.map.setValue(xpG, ypG, currentReward + discountedGhostReward)
+        # order ghost list for edible ghosts to be first. This ensures positve rewards are overwritten by negative ones.
+        predictedGhostPaths.sort(key=lambda x: x[3], reverse=True)
+        print(len(predictedGhostPaths), "ghosts")
+        for path, (currX, currY), (prevX, prevY), timeEdible, wasEaten in predictedGhostPaths:
+            reward = GHOST_REWARD
+            if timeEdible > CAPSULE_TIME_RUNNING_OUT_THRESHOLD:
+                # negative rewards around spawn point, if a ghost is there
+                self.setNegativeRewardsAtRespawn(currX, currY)
+                reward = GHOST_EDIBLE_REWARD
+
+            if not wasEaten:
+                self.map.setValue(prevX, prevY, reward)
+
+            for (xpG, ypG), (probability, distance) in path.items():
+                discountedGhostReward = 1.0/(distance+1.0) * reward * probability
+                # currentReward = self.map.getValue(xpG, ypG)
+                # currentReward = currentReward if currentReward != None else 0 # figure out how to fix this. Gets none when ghost respawns (but only sometimes)
+                # self.map.setValue(xpG, ypG, currentReward + discountedGhostReward)
+                self.map.setValue(xpG, ypG, discountedGhostReward)
 
         self.previousGhosts = ghosts
         # TODO: Make the map update more efficient.
 
 
     def setNegativeRewardsAtRespawn(self, x, y):
+        dangerousArea = [(8, 5), (9, 5), (10, 5), (11, 5), (9, 6), (10, 6), (9, 7), (10, 7)]
         respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
-        if (x, y) in respawn:
+        if (x, y) in dangerousArea:
             for xR, yR in respawn:
                 self.map.setValue(xR, yR, GHOST_REWARD)
 
@@ -343,7 +348,6 @@ class GhostPredictionAgent(Agent):
     def predictGhostPath(self, startPosition, startDirection):
 
         # Todo: Fix prediction when ghost is eaten
-        # Todo: Fix pacman running into ghost if close to it because there is reward behind ghost.
 
         # This dictionary will hold the accumulated probabilities of the ghost being at each position
         probabilityMap = {}
@@ -454,53 +458,37 @@ class GhostPredictionAgent(Agent):
         
         return list(dangerPoints)
 
-    # def updateRewardsCapsuleEaten(self, state, x, y, edibleTime):
-    #     position = api.whereAmI(state)
-    #     distance = len(self.distance(position, (x, y)))
-    #     # maybe dont even need the distance. could just chase in general.
-    #     if edibleTime > distance: # if time is more than distance, it is worth chasing after it. Otherwise it is quite unlikely to catch it. Can refine this condition.
-    #         self.map.setValue(x, y, GHOST_EDIBLE_REWARD)
-    #     else:
-    #         self.map.setValue(x, y, GHOST_EDIBLE_REWARD) # could make this reward a function of time and distance
+    # # use BFS to find distance to a point.
+    # def distance(self, start, end):
 
-    #     # negative rewards around spawn point, if a ghost is there
-    #     respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
-    #     if (x, y) in respawn:
-    #         for xR, yR in respawn:
-    #             self.map.setValue(xR, yR, GHOST_DANGER_ZONE_REWARD)
+    #     queue = deque()
 
+    #     queue.append((start, [start]))
+    #     visited = set()
 
-    # use BFS to find distance to a point.
-    def distance(self, start, end):
+    #     while queue:
+    #         current, path = queue.popleft()
 
-        queue = deque()
-
-        queue.append((start, [start]))
-        visited = set()
-
-        while queue:
-            current, path = queue.popleft()
-
-            if current == end:
-                return path
+    #         if current == end:
+    #             return path
             
-            # skip if already visited
-            if current in visited:
-                continue
+    #         # skip if already visited
+    #         if current in visited:
+    #             continue
 
-            visited.add(current)
+    #         visited.add(current)
 
-            # enqueue all valid neighbouring cells
-            # These arrays are used to get row and column numbers of 4 neighbours of a given cell
-            rowNum = [-1, 0, 0, 1]
-            colNum = [0, -1, 1, 0]
+    #         # enqueue all valid neighbouring cells
+    #         # These arrays are used to get row and column numbers of 4 neighbours of a given cell
+    #         rowNum = [-1, 0, 0, 1]
+    #         colNum = [0, -1, 1, 0]
 
-            for i in range(4):
-                adjX, adjY = current[0] + colNum[i], current[1] + rowNum[i]
-                adjPoint = (adjX, adjY)
+    #         for i in range(4):
+    #             adjX, adjY = current[0] + colNum[i], current[1] + rowNum[i]
+    #             adjPoint = (adjX, adjY)
 
-                if self.map.getValue(adjX, adjY) != None and adjPoint not in visited:
-                    queue.append((adjPoint, path + [adjPoint]))
+    #             if self.map.getValue(adjX, adjY) != None and adjPoint not in visited:
+    #                 queue.append((adjPoint, path + [adjPoint]))
 
     def getAction(self, state):
         

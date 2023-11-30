@@ -45,20 +45,17 @@ import util
 import sys
 from collections import deque
 
-FOOD_REWARD = 20
-EMTPY_REWARD = -0.05
-GHOST_REWARD = -1250
+FOOD_REWARD = 10
+EMTPY_REWARD = -0.04
+GHOST_REWARD = -1000
 GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
 GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
 CAPSULE_REWARD = 100
 GHOST_EDIBLE_REWARD = abs(GHOST_REWARD)
 CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 5
-PREDICTION_THRESHOLD = 0.1
 ISSMALL = False
-ACTIONS = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
-
 # Value iteration:
-ITERATIONS = 200
+ITERATIONS = 100
 CONVERGENCE_THRESHOLD = 0.001
 
 # Bellmann:
@@ -144,8 +141,7 @@ movePossibleResults = {Directions.NORTH: [Directions.NORTH, Directions.WEST, Dir
                        Directions.WEST: [Directions.WEST, Directions.NORTH, Directions.SOUTH], 
                        Directions.EAST: [Directions.EAST, Directions.NORTH, Directions.SOUTH]}
 
-
-class GhostPredictionAgent(Agent):
+class NewMDPAgent(Agent):
 
     # The constructor. We don't use this to create the map because it
     # doesn't have access to state information.
@@ -157,34 +153,32 @@ class GhostPredictionAgent(Agent):
     def registerInitialState(self, state):
         print "Running registerInitialState!"
         # Make a map of the right size
-        self.makeMaps(state)
+        self.makeMap(state)
         self.addWallsToMap(state)
         self.initialiseRewardsInMap(state)
-        self.initialiseLegalMovesMap()
         self.previousGhosts = []
         if self.map.getWidth() < 8:
             global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
-            # FOOD_REWARD = 20
-            # EMTPY_REWARD = -0.01
-            # GHOST_REWARD = -100
-            # GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
-            # GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
-            # GAMMA = 0.95
-            # ITERATIONS = 100
-            # ISSMALL = True
-
+            FOOD_REWARD = 20
+            EMTPY_REWARD = -0.05
+            GHOST_REWARD = -1000
+            GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
+            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
+            GAMMA = 0.95
+            ITERATIONS = 100
+            ISSMALL = True
     # This is what gets run when the game ends.
     def final(self, state):
         # cleanup?
         print "Looks like I just died!"
 
     # Make a map by creating a grid of the right size
-    def makeMaps(self,state):
+    def makeMap(self,state):
         corners = api.corners(state)
         height = self.getLayoutHeight(corners)
         width  = self.getLayoutWidth(corners)
         self.map = Grid(width, height)
-        self.legalMovesMap = Grid(width, height)
+        
     # Functions to get the height and the width of the grid.
     #
     # We add one to the value returned by corners to switch from the
@@ -236,6 +230,9 @@ class GhostPredictionAgent(Agent):
         for x, y in ghosts:
             self.map.setValue(x, y, GHOST_REWARD)
 
+        # Hardcoded - half the reward for food in the enclosed square in the map. --> Pacman eats that last.
+        if ISSMALL:
+            self.map.setValue(3, 3, FOOD_REWARD * 0.5)
         self.previousGhosts = ghosts 
 
     def apiGetGhostsInt(self, state):
@@ -243,24 +240,6 @@ class GhostPredictionAgent(Agent):
 
     def apiGetGhostsWithTimesInt(self, state):
         return [(int(ghost[0][0]), int(ghost[0][1]), ghost[1]) for ghost in api.ghostStatesWithTimes(state)]
-    
-    def initialiseLegalMovesMap(self):
-        for x in range(self.legalMovesMap.getWidth()):
-            for y in range(self.legalMovesMap.getHeight()):
-                if self.map.getValue(x, y) != None:
-                    self.legalMovesMap.setValue(x, y, self.getLegalMovesAt(x, y))
-                else:
-                    self.legalMovesMap.setValue(x, y, None) # walls are none
-        print("legal moves map")
-        self.legalMovesMap.prettyDisplay()
-
-    def getLegalMovesAt(self, x, y):
-        legal = []
-        for action in ACTIONS:
-            newX, newY = self.getCoordinateAfterMove(action, x, y)
-            if self.map.getValue(newX, newY) != None:
-                legal.append(action)
-        return legal
     
     def updateMap(self, state, x, y):
 
@@ -272,156 +251,25 @@ class GhostPredictionAgent(Agent):
         food = api.food(state)
         for x, y in food:
             self.map.setValue(x, y, FOOD_REWARD)
-        # if ISSMALL and (3, 3) in food:
-        #     self.map.setValue(3, 3, FOOD_REWARD * 0.5)
+        if ISSMALL and (3, 3) in food:
+            self.map.setValue(3, 3, FOOD_REWARD * 0.5)
 
         # Capsules
         capsules = api.capsules(state)
         for x, y in capsules:
             self.map.setValue(x, y, CAPSULE_REWARD)
 
-
         # Ghosts
         ghosts = self.apiGetGhostsWithTimesInt(state)
-
-        # predict where ghost is moving to. Give negative rewards to those fields.
-        if len(self.previousGhosts) > 0: # no prediction can be made in first step of game since direction is unknown
-            for (prevX, prevY, prevT), (currX, currY, currT) in zip(self.previousGhosts, ghosts):
-                direction = self.getMovementDirection(prevX, prevY, currX, currY)
-                print("Ghost from ", (prevX, prevY), "to", (currX, currY), "moving", direction)
-                predictedGhostPath = self.predictGhostPath((currX, currY), direction)
-                self.prettyPrintGhostPaths(predictedGhostPath)
-                if currT > CAPSULE_TIME_RUNNING_OUT_THRESHOLD: # timer is bigger than threshold --> consider ghost as edible. chase after. otherwise run away
-                    reward = GHOST_EDIBLE_REWARD # integrate time and distance of pacman to that spot into the reward (how likely is it that pacman will get there in time)
-                    # negative rewards around spawn point, if a ghost is there
-                    self.setNegativeRewardsAtRespawn(currX, currY)
-                else:
-                    reward = GHOST_REWARD
-                
-                self.map.setValue(prevX, prevY, reward) # try to prevent pacman from running into ghost
-
-                for (xpG, ypG), (probability, distance) in predictedGhostPath.items():
-                    discountedGhostReward = 1.0/(distance+1.0) * reward * probability
-                    currentReward = self.map.getValue(xpG, ypG)
-                    if currentReward == None:
-                        print("current reward is none")
-                        self.map.setValue(xpG, ypG, discountedGhostReward) # figure out how to fix this. Gets none when ghost respawns (but only sometimes)
-                    else:
-                        self.map.setValue(xpG, ypG, currentReward + discountedGhostReward)
-
+        for xG, yG, t in ghosts:
+            if t > CAPSULE_TIME_RUNNING_OUT_THRESHOLD: # timer is bigger than threshold --> consider ghost as edible. chase after. otherwise run away
+                self.updateRewardsCapsuleEaten(state, xG, yG, t)
+            else: # ghost is not edible --> negative reward. Run away
+                dangerZone = self.getNAdjacentPoints(GHOST_DANGER_ZONE, (xG, yG))
+                for xD, yD in dangerZone:
+                    self.map.setValue(xD, yD, GHOST_DANGER_ZONE_REWARD)
+                self.map.setValue(xG, yG, GHOST_REWARD)
         self.previousGhosts = ghosts
-        # TODO: Make the map update more efficient.
-
-
-    def setNegativeRewardsAtRespawn(self, x, y):
-        respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
-        if (x, y) in respawn:
-            for xR, yR in respawn:
-                self.map.setValue(xR, yR, GHOST_REWARD)
-
-
-    def prettyPrintGhostPaths(self, probabilityMap):
-        # Sort the paths by distance, which is the second item in the tuple
-        sortedPaths = sorted(probabilityMap.items(), key=lambda item: item[1][1])
-        
-        # Pretty print the sorted paths
-        for position, (probability, distance) in sortedPaths:
-            print "Position: %s, Probability: %.2f, Distance: %s" % (position, probability, distance)
-
-
-    def getMovementDirection(self, prevX, prevY, currX, currY):
-            if currY > prevY:
-                return Directions.NORTH
-            elif currY < prevY:
-                return Directions.SOUTH
-            elif currX > prevX:
-                return Directions.EAST
-            else:
-                return Directions.WEST
-
-
-    def predictGhostPath(self, startPosition, startDirection):
-
-        # Todo: Fix prediction when ghost is eaten
-        # Todo: Fix pacman running into ghost if close to it because there is reward behind ghost.
-
-        # This dictionary will hold the accumulated probabilities of the ghost being at each position
-        probabilityMap = {}
-        visited = set()
-        # Initialize the queue with the starting position, direction, probability and distance
-        queue = deque([(startPosition, startDirection, 1.0, 0)])
-        
-        while queue:
-            currentPosition, currentDirection, currentProbability, currentDistance = queue.popleft()
-
-            # Mark as visited by adding the position and the direction we came from
-            visited.add((currentPosition, currentDirection))
-
-            # If the probability is already below the threshold, don't continue this path
-            if ISSMALL:
-                if currentProbability < 0.25:
-                    continue
-            else:
-                if currentProbability < PREDICTION_THRESHOLD:
-                    continue
-
-            if ISSMALL and currentDistance > 9: # only predict for 9 steps ahead in small map
-                continue
-
-            if currentPosition not in probabilityMap:
-                probabilityMap[currentPosition] = (currentProbability, currentDistance)
-
-            else:
-                # If this position was reached by another path, combine the probabilities
-                # and store the minimum distance.
-                existingProbability, existingDistance = probabilityMap[currentPosition]
-                combinedProbability = max(existingProbability, currentProbability)
-                minimumDistance = min(existingDistance, currentDistance)
-                probabilityMap[currentPosition] = (combinedProbability, minimumDistance)
-
-            # Get the legal moves from the current position
-            legalDirections = self.legalMovesMap.getValue(currentPosition[0], currentPosition[1])
-            # print("legal directions", legalDirections) 
-            if legalDirections != None: # I think gets None when ghost respawns
-                if len(legalDirections) > 2:
-                    # If at a junction, remove the opposite direction and split probability
-                    legalDirections = self.filterOppositeDirection(legalDirections, currentDirection)
-                    splitProbability = currentProbability / len(legalDirections)
-                    for direction in legalDirections:
-                        nextPosition = self.getCoordinateAfterMove(direction, currentPosition[0], currentPosition[1])
-                        if (nextPosition, currentDirection) not in visited:
-                            queue.append((nextPosition, direction, splitProbability, currentDistance + 1))
-                else:
-                    # If the ghost is at a dead end, it should turn around
-                    if len(legalDirections) == 1: 
-                        currentDirection = self.getOppositeDirection(currentDirection)  # Turn around
-
-                    # go around corner
-                    elif currentDirection not in legalDirections:
-                        currentDirection = [d for d in legalDirections if d != self.getOppositeDirection(currentDirection)][0]
-
-                    # Continue in the same direction / go around corner
-                    nextPosition = self.getCoordinateAfterMove(currentDirection, currentPosition[0], currentPosition[1])
-
-                    # check if the node was visited from the same direction. This might cause some problems but should solve the issue of a ghost going into a dead end.
-                    if (nextPosition, currentDirection) not in visited:
-                        queue.append((nextPosition, currentDirection, currentProbability, currentDistance + 1))
-
-        return probabilityMap
-
-    def getOppositeDirection(self, direction):
-        opposite = {
-            Directions.NORTH: Directions.SOUTH,
-            Directions.SOUTH: Directions.NORTH,
-            Directions.EAST: Directions.WEST,
-            Directions.WEST: Directions.EAST
-        }
-        return opposite[direction]
-
-    def filterOppositeDirection(self, directions, currentDirection):
-        # Remove the opposite direction to the current direction
-        opposite = self.getOppositeDirection(currentDirection)
-        return [d for d in directions if d != opposite]
 
     def getNAdjacentPoints(self, n, startPoint):
         rowNum = [-1, 0, 0, 1]
@@ -454,21 +302,20 @@ class GhostPredictionAgent(Agent):
         
         return list(dangerPoints)
 
-    # def updateRewardsCapsuleEaten(self, state, x, y, edibleTime):
-    #     position = api.whereAmI(state)
-    #     distance = len(self.distance(position, (x, y)))
-    #     # maybe dont even need the distance. could just chase in general.
-    #     if edibleTime > distance: # if time is more than distance, it is worth chasing after it. Otherwise it is quite unlikely to catch it. Can refine this condition.
-    #         self.map.setValue(x, y, GHOST_EDIBLE_REWARD)
-    #     else:
-    #         self.map.setValue(x, y, GHOST_EDIBLE_REWARD) # could make this reward a function of time and distance
+    def updateRewardsCapsuleEaten(self, state, x, y, edibleTime):
+        position = api.whereAmI(state)
+        distance = len(self.distance(position, (x, y)))
+        # maybe dont even need the distance. could just chase in general.
+        if edibleTime > distance: # if time is more than distance, it is worth chasing after it. Otherwise it is quite unlikely to catch it. Can refine this condition.
+            self.map.setValue(x, y, GHOST_EDIBLE_REWARD)
+        else:
+            self.map.setValue(x, y, GHOST_EDIBLE_REWARD) # could make this reward a function of time and distance
 
-    #     # negative rewards around spawn point, if a ghost is there
-    #     respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
-    #     if (x, y) in respawn:
-    #         for xR, yR in respawn:
-    #             self.map.setValue(xR, yR, GHOST_DANGER_ZONE_REWARD)
-
+        # negative rewards around spawn point, if a ghost is there
+        respawn = [(8, 5), (9, 5), (10, 5), (11, 5)]
+        if (x, y) in respawn:
+            for xR, yR in respawn:
+                self.map.setValue(xR, yR, GHOST_DANGER_ZONE_REWARD)
 
     # use BFS to find distance to a point.
     def distance(self, start, end):
@@ -502,6 +349,8 @@ class GhostPredictionAgent(Agent):
                 if self.map.getValue(adjX, adjY) != None and adjPoint not in visited:
                     queue.append((adjPoint, path + [adjPoint]))
 
+    #  Dynamically reduce rewards of fields that are on the path to the closest ghost. --> Mali
+
     def getAction(self, state):
         
         legal = api.legalActions(state)
@@ -515,8 +364,8 @@ class GhostPredictionAgent(Agent):
         utilityMap = self.valueIteration()  
 
         maxUtilityMove = self.getMaxUtilityMove(legal, utilityMap, x, y)
-        print("Pacman at ", position)
-        print("Best move ", maxUtilityMove)
+        print(position)
+        print(maxUtilityMove)
         self.map.prettyDisplay()
         utilityMap.prettyDisplay()
 
