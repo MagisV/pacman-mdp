@@ -46,14 +46,12 @@ import sys
 from collections import deque
 
 FOOD_REWARD = 20
-EMTPY_REWARD = -0.05
+EMTPY_REWARD = -0.06
 GHOST_REWARD = -1250
-# GHOST_DANGER_ZONE = 3 # fields around ghost that are given a negative reward as well
-# GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.75 # fields around ghost that are given a negative reward as well
 CAPSULE_REWARD = 100
 GHOST_EDIBLE_REWARD = abs(GHOST_REWARD) * 0.75
 CAPSULE_TIME_RUNNING_OUT_THRESHOLD = 4
-PREDICTION_THRESHOLD = 0.2
+PREDICTION_THRESHOLD = 0.18
 ISSMALL = False
 ACTIONS = [Directions.NORTH, Directions.SOUTH, Directions.EAST, Directions.WEST]
 
@@ -63,7 +61,10 @@ CONVERGENCE_THRESHOLD = 0.001
 
 # Bellmann:
 # How much the agent values future rewards over immediate rewards
-GAMMA = 0.95
+GAMMA = 0.96
+
+
+# Reusing the grid class from the W5 practical.
 
 #
 # A class that creates a grid that can be used as a map
@@ -163,14 +164,13 @@ class WipGhostPredictionAgent(Agent):
         self.initialiseLegalMovesMap()
         self.previousGhosts = []
         if self.map.getWidth() < 8:
-            global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
+            global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL, PREDICTION_THRESHOLD
             FOOD_REWARD = 20
             EMTPY_REWARD = -0.01
             GHOST_REWARD = -100
-            GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
-            GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
             GAMMA = 0.92
             ITERATIONS = 100
+            PREDICTION_THRESHOLD = 0.25
             ISSMALL = True
 
     # This is what gets run when the game ends.
@@ -251,8 +251,8 @@ class WipGhostPredictionAgent(Agent):
                     self.legalMovesMap.setValue(x, y, self.getLegalMovesAt(x, y))
                 else:
                     self.legalMovesMap.setValue(x, y, None) # walls are none
-        print("legal moves map")
-        self.legalMovesMap.prettyDisplay()
+        # print("legal moves map")
+        # self.legalMovesMap.prettyDisplay()
 
     def getLegalMovesAt(self, x, y):
         legal = []
@@ -288,9 +288,9 @@ class WipGhostPredictionAgent(Agent):
             for (prevX, prevY, prevT), (currX, currY, currT) in zip(self.previousGhosts, ghosts):
                 direction = self.getMovementDirection(prevX, prevY, currX, currY)
                 wasEaten = abs(currX - prevX) > 1 or abs(currY - prevY) > 1
-                print("Ghost from ", (prevX, prevY), "to", (currX, currY), "moving", direction)
+                # print("Ghost from ", (prevX, prevY), "to", (currX, currY), "moving", direction)
                 predictedGhostPath = self.predictGhostPath((currX, currY), direction)
-                self.prettyPrintGhostPaths(predictedGhostPath)
+                # self.prettyPrintGhostPaths(predictedGhostPath)
                 predictedGhostPaths.append((predictedGhostPath, (currX, currY), (prevX, prevY), currT, wasEaten))
 
         # order ghost list for edible ghosts to be first. This ensures positve rewards are overwritten by negative ones.
@@ -298,24 +298,28 @@ class WipGhostPredictionAgent(Agent):
         print(len(predictedGhostPaths), "ghosts")
         for path, (currX, currY), (prevX, prevY), timeEdible, wasEaten in predictedGhostPaths:
             reward = GHOST_REWARD
-            if timeEdible > CAPSULE_TIME_RUNNING_OUT_THRESHOLD:
-                # negative rewards around spawn point, if a ghost is there
-                self.setNegativeRewardsAtRespawn(currX, currY)
+            if not ISSMALL and timeEdible > CAPSULE_TIME_RUNNING_OUT_THRESHOLD and not self.isInDangerousRespawnArea(currX, currY): # if ghost is edible and not around respawn area, chase after it
                 reward = GHOST_EDIBLE_REWARD
 
             if not wasEaten:
                 self.map.setValue(prevX, prevY, reward)
 
             for (xpG, ypG), (probability, distance) in path.items():
-                discountedGhostReward = 1.0/(distance+1.0) * reward * probability
-                # currentReward = self.map.getValue(xpG, ypG)
-                # currentReward = currentReward if currentReward != None else 0 # figure out how to fix this. Gets none when ghost respawns (but only sometimes)
-                # self.map.setValue(xpG, ypG, currentReward + discountedGhostReward)
-                self.map.setValue(xpG, ypG, discountedGhostReward)
+                discountedGhostReward = 1.0/((distance+1.0)) * reward * probability
+                if ISSMALL:
+                    currentReward = self.map.getValue(xpG, ypG)
+                    # print("current reward at ", (xpG, ypG), "is", currentReward)
+                    currentReward = currentReward if currentReward != None else 0 # figure out how to fix this. Gets none when ghost respawns (but only sometimes)
+                    self.map.setValue(xpG, ypG, currentReward + discountedGhostReward)
+                else:
+                    self.map.setValue(xpG, ypG, discountedGhostReward)
 
+            
         self.previousGhosts = ghosts
         # TODO: Make the map update more efficient.
-
+    def isInDangerousRespawnArea(self, x, y):
+        dangerousArea = [(8, 5), (9, 5), (10, 5), (11, 5), (9, 6), (10, 6), (9, 7), (10, 7)]
+        return (x, y) in dangerousArea
 
     def setNegativeRewardsAtRespawn(self, x, y):
         dangerousArea = [(8, 5), (9, 5), (10, 5), (11, 5), (9, 6), (10, 6), (9, 7), (10, 7)]

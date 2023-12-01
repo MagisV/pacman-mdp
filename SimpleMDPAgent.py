@@ -159,13 +159,13 @@ class NewMDPAgent(Agent):
         self.previousGhosts = []
         if self.map.getWidth() < 8:
             global FOOD_REWARD, EMTPY_REWARD, GHOST_REWARD, GHOST_DANGER_ZONE, GHOST_DANGER_ZONE_REWARD, GAMMA, ITERATIONS, ISSMALL
-FOOD_REWARD = 20
-EMTPY_REWARD = -0.05
-GHOST_REWARD = -1000
+            FOOD_REWARD = 20
+            EMTPY_REWARD = -0.05
+            GHOST_REWARD = -1000
             GHOST_DANGER_ZONE = 1 # fields around ghost that are given a negative reward as well
             GHOST_DANGER_ZONE_REWARD = GHOST_REWARD * 0.2 # fields around ghost that are given a negative reward as well
-GAMMA = 0.95
-ITERATIONS = 100
+            GAMMA = 0.95
+            ITERATIONS = 100
             ISSMALL = True
     # This is what gets run when the game ends.
     def final(self, state):
@@ -250,17 +250,7 @@ ITERATIONS = 100
             for j in range(self.map.getHeight()):
                 if self.map.getValue(i, j) != None:
                     self.map.setValue(i, j, EMTPY_REWARD)
-        # # Check out all the places ghosts came from. If there was food in the location, reinstantiate it. Otherwise, set it to empty.
-        # food = api.food(state)
-        # capsules = api.capsules(state)
-        # for x, y, t in self.previousGhosts:
-        #     # print("prev ghost location", prevGhostLocation)
-        #     if (x, y) in food:
-        #         self.map.setValue(x, y, FOOD_REWARD)
-        #     elif (x, y) in capsules:
-        #         self.map.setValue(x, y, CAPSULE_REWARD)
-        #     else:
-        #         self.map.setValue(x, y, EMTPY_REWARD)
+ 
 
         food = api.food(state)
         for x, y in food:
